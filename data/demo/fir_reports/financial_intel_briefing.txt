@@ -1,0 +1,14 @@
+FINANCIAL INTELLIGENCE UNIT (FIU) SPECIAL ALERT
+Subject: Hawala Layering and Shell Entity Network (Nexus Holdings)
+Date: 16 August 2026
+
+CORE FINDINGS:
+Analysis of banking transaction logs reveals rapid fund layering between two corporate front entities:
+1. Apex Logistics (Managed by Rajesh Gupta at Noida Sector 62)
+2. Delta Trading Corp (Managed by Sanjay Singhania at Cyber City Gurugram)
+
+Facilitator Karan Malhotra utilized multiple bank accounts including ACC88990066 and ACC88990077 to disperse funds into small tranches across 12 distinct recipient accounts.
+A critical anomaly of ₹15,00,000 was flagged entering Account ACC88990011 associated with Rohit Sharma from Mumbai offshore account ACC88990033 associated with Sameer Khan.
+
+RECOMMENDATION:
+Immediate freezing order review recommended for primary routing accounts. Cross-reference CDR logs with travel movements of Rohit Sharma, Amit Verma, and Sameer Khan.
