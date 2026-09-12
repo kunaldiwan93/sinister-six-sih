@@ -3,13 +3,17 @@ from typing import List
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, "nexus.db").replace("\\", "/")
+DEFAULT_DB_URL = f"sqlite:///{DEFAULT_DB_PATH}"
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "NEXUS Investigation Intelligence System"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
     
     DATABASE_URL: str = Field(
-        default="sqlite:///./nexus.db",
+        default=DEFAULT_DB_URL,
         description="PostgreSQL or SQLite database connection URL"
     )
     

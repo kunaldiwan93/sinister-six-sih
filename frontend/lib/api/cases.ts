@@ -2,7 +2,12 @@ import { apiClient } from "./client";
 import { Case } from "@/types";
 
 export async function fetchCases(): Promise<Case[]> {
-  return apiClient<Case[]>("/cases");
+  try {
+    return await apiClient<Case[]>("/cases");
+  } catch (err) {
+    console.warn("Failed to fetch cases:", err);
+    return [];
+  }
 }
 
 export async function fetchCaseById(id: string): Promise<Case> {

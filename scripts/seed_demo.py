@@ -196,6 +196,10 @@ def seed():
             reader = csv.DictReader(f)
             for row in reader:
                 reg = row["registration"].strip()
+                v_category = row.get("vehicle_category", "PERSONAL_VEHICLE").strip()
+                owner_name = row.get("registered_owner", "").strip()
+                driver_name = row.get("primary_driver", "").strip()
+
                 v_ent = vehicle_entities.get(reg)
                 if not v_ent:
                     v_ent = Entity(
@@ -203,25 +207,88 @@ def seed():
                         type="VEHICLE",
                         canonical_name=reg,
                         display_name=reg,
-                        meta_info={"make_model": row.get("make_model"), "notes": row.get("notes")}
+                        meta_info={
+                            "make_model": row.get("make_model"),
+                            "registered_owner": owner_name,
+                            "primary_driver": driver_name,
+                            "vehicle_category": v_category,
+                            "notes": row.get("notes")
+                        }
                     )
                     db.add(v_ent)
                     db.flush()
                     vehicle_entities[reg] = v_ent
+                else:
+                    v_ent.meta_info = {
+                        **(v_ent.meta_info or {}),
+                        "registered_owner": owner_name,
+                        "primary_driver": driver_name,
+                        "vehicle_category": v_category,
+                        "make_model": row.get("make_model"),
+                        "notes": row.get("notes")
+                    }
 
+                # 1. Registered Owner OWNS vehicle edge
+                if owner_name:
+                    o_ent = person_entities.get(owner_name)
+                    if o_ent:
+                        db.add(Relationship(
+                            case_id=case_id,
+                            source_id=o_ent.id,
+                            target_id=v_ent.id,
+                            relationship_type="OWNS",
+                            confidence=0.98,
+                            source_document="vehicles.csv",
+                            timestamp=datetime(2026, 8, 10, 9, 0),
+                            evidence_text=f"{owner_name} is registered legal owner of vehicle {reg} ({v_category})."
+                        ))
+
+                # 2. Driver DRIVES vehicle edge
+                if driver_name:
+                    d_ent = person_entities.get(driver_name)
+                    if d_ent:
+                        db.add(Relationship(
+                            case_id=case_id,
+                            source_id=d_ent.id,
+                            target_id=v_ent.id,
+                            relationship_type="DRIVES",
+                            confidence=0.96,
+                            source_document="vehicles.csv",
+                            timestamp=datetime(2026, 8, 12, 14, 30),
+                            evidence_text=f"{driver_name} operates as designated driver for vehicle {reg} ({v_category})."
+                        ))
+
+                # 3. Passengers TRAVELED_IN vehicle edges
                 shared_users = [u.strip() for u in row.get("shared_users", "").split(",") if u.strip()]
+                user_ents = []
                 for user_name in shared_users:
                     u_ent = person_entities.get(user_name)
                     if u_ent:
-                        # Shared vehicle relationship
+                        user_ents.append(u_ent)
+                        if user_name != driver_name and user_name != owner_name:
+                            db.add(Relationship(
+                                case_id=case_id,
+                                source_id=u_ent.id,
+                                target_id=v_ent.id,
+                                relationship_type="TRAVELED_IN",
+                                confidence=0.91,
+                                source_document="vehicles.csv",
+                                timestamp=datetime(2026, 8, 12, 14, 30),
+                                evidence_text=f"{user_name} observed as passenger in vehicle {reg} ({v_category})."
+                            ))
+
+                # 4. Person-to-Person SHARED_VEHICLE links for co-travelers
+                for i in range(len(user_ents)):
+                    for j in range(i + 1, len(user_ents)):
                         db.add(Relationship(
                             case_id=case_id,
-                            source_id=u_ent.id,
-                            target_id=v_ent.id,
+                            source_id=user_ents[i].id,
+                            target_id=user_ents[j].id,
                             relationship_type="SHARED_VEHICLE",
-                            confidence=0.92,
+                            confidence=0.94,
                             source_document="vehicles.csv",
-                            evidence_text=f"{user_name} observed operating shared asset {reg} ({row.get('make_model')})."
+                            timestamp=datetime(2026, 8, 12, 14, 30),
+                            evidence_text=f"{user_ents[i].display_name} and {user_ents[j].display_name} observed co-traveling in vehicle {reg} at 2026-08-12 14:30."
                         ))
         db.commit()
         print(f"[OK] Loaded Vehicle records and shared user associations.")

@@ -110,33 +110,220 @@ class AlertEngine:
             db.add(alert)
             created_alerts.append(alert)
 
-        # Process Shared Identifier Alerts
-        for sr in shared_rels:
+        # 5. Shared Identifiers & Temporal Asset Sharing Analysis
+        # A. Direct SHARED_* edges between Person entities
+        direct_shared_rels = db.query(Relationship).filter(
+            Relationship.case_id == case_id,
+            Relationship.relationship_type.in_(["SHARED_PHONE", "SHARED_VEHICLE", "SHARED_ACCOUNT", "SHARED_LOCATION"])
+        ).all()
+
+        for sr in direct_shared_rels:
             s_ent = entities.get(sr.source_id)
             t_ent = entities.get(sr.target_id)
             if s_ent and t_ent:
-                title = f"Shared Infrastructure Detected: {sr.relationship_type.replace('_', ' ').title()}"
-                alert = Alert(
-                    case_id=case_id,
-                    entity_id=s_ent.id,
-                    title=title,
-                    category="SHARED_IDENTIFIER",
-                    severity="HIGH",
-                    status="NEW",
-                    explanation=f"{s_ent.display_name} and {t_ent.display_name} share common operational infrastructure ({sr.relationship_type}).",
-                    evidence=[
-                        f"Source Entity: {s_ent.display_name} ({s_ent.type})",
-                        f"Target Entity: {t_ent.display_name} ({t_ent.type})",
-                        f"Shared Type: {sr.relationship_type}",
-                        f"Confidence: {sr.confidence}",
-                        f"Source Document: {sr.source_document or 'Intelligence Data'}"
-                    ],
-                    confidence=float(sr.confidence or 0.9),
-                    timestamp=datetime.utcnow(),
-                    meta_info={"source_id": s_ent.id, "target_id": t_ent.id, "type": sr.relationship_type}
-                )
-                db.add(alert)
-                created_alerts.append(alert)
+                # Ensure we only generate Person-to-Person alerts for direct SHARED_* relationships
+                if s_ent.type == "PERSON" and t_ent.type == "PERSON":
+                    rel_label = sr.relationship_type.replace('_', ' ').title()
+                    if sr.relationship_type == "SHARED_VEHICLE":
+                        title = f"Concurrent Co-Travel Detected: {s_ent.display_name} ↔ {t_ent.display_name}"
+                        explanation = f"{s_ent.display_name} and {t_ent.display_name} were observed traveling together in a shared vehicle."
+                    else:
+                        title = f"Shared Infrastructure Detected: {rel_label}"
+                        explanation = f"{s_ent.display_name} and {t_ent.display_name} share common operational infrastructure ({sr.relationship_type})."
+
+                    alert = Alert(
+                        case_id=case_id,
+                        entity_id=s_ent.id,
+                        title=title,
+                        category="SHARED_IDENTIFIER",
+                        severity="HIGH",
+                        status="NEW",
+                        explanation=explanation,
+                        evidence=[
+                            f"Person 1: {s_ent.display_name}",
+                            f"Person 2: {t_ent.display_name}",
+                            f"Shared Type: {sr.relationship_type}",
+                            f"Confidence: {sr.confidence}",
+                            f"Evidence: {sr.evidence_text or sr.source_document or 'Intelligence Data'}"
+                        ],
+                        confidence=float(sr.confidence or 0.9),
+                        timestamp=sr.timestamp or datetime.utcnow(),
+                        meta_info={"source_id": s_ent.id, "target_id": t_ent.id, "type": sr.relationship_type}
+                    )
+                    db.add(alert)
+                    created_alerts.append(alert)
+
+        # B. Derived Shared Asset Analysis (Vehicles, Phones, Bank Accounts)
+        asset_entities = [e for e in entities.values() if e.type in ("VEHICLE", "PHONE", "BANK_ACCOUNT")]
+        for asset in asset_entities:
+            # Find all usage relationships pointing to this asset entity
+            usage_rels = db.query(Relationship).filter(
+                Relationship.case_id == case_id,
+                Relationship.target_id == asset.id,
+                Relationship.relationship_type.in_(["USES", "OPERATES", "OWNS", "TRAVELED_IN", "SHARED_VEHICLE"])
+            ).all()
+
+            # Group usage by person entity
+            person_usages: Dict[str, List[Relationship]] = {}
+            for r in usage_rels:
+                src = entities.get(r.source_id)
+                if src and src.type == "PERSON":
+                    if src.id not in person_usages:
+                        person_usages[src.id] = []
+                    person_usages[src.id].append(r)
+
+            if len(person_usages) >= 2:
+                user_ids = list(person_usages.keys())
+                # Pairwise comparison of users sharing this asset
+                for i in range(len(user_ids)):
+                    for j in range(i + 1, len(user_ids)):
+                        p1 = entities[user_ids[i]]
+                        p2 = entities[user_ids[j]]
+                        rels1 = person_usages[user_ids[i]]
+                        rels2 = person_usages[user_ids[j]]
+
+                        # Check for temporal concurrency
+                        is_concurrent = False
+                        concurrent_time = None
+                        for r1 in rels1:
+                            for r2 in rels2:
+                                t1 = r1.timestamp
+                                t2 = r2.timestamp
+                                # If timestamps are both set and within 2 hours, or if same evidence document
+                                if t1 and t2:
+                                    time_diff = abs((t1 - t2).total_seconds())
+                                    if time_diff <= 7200:
+                                        is_concurrent = True
+                                        concurrent_time = t1.strftime('%Y-%m-%d %H:%M')
+                                        break
+                                elif r1.source_document and r1.source_document == r2.source_document:
+                                    is_concurrent = True
+                                    break
+                            if is_concurrent:
+                                break
+
+                        if asset.type == "VEHICLE":
+                            if is_concurrent:
+                                title = f"Concurrent Vehicle Co-Travel: {p1.display_name} & {p2.display_name}"
+                                severity = "CRITICAL"
+                                exp_time = f" at {concurrent_time}" if concurrent_time else ""
+                                explanation = f"{p1.display_name} and {p2.display_name} were detected traveling concurrently in Vehicle {asset.display_name}{exp_time}."
+                            else:
+                                title = f"Sequential Shared Vehicle Usage: Vehicle {asset.display_name}"
+                                severity = "MEDIUM"
+                                explanation = f"{p1.display_name} and {p2.display_name} operated the same vehicle ({asset.display_name}) at different times."
+                        else:
+                            title = f"Shared Asset Infrastructure: {asset.type.title()} {asset.display_name}"
+                            severity = "HIGH"
+                            explanation = f"{p1.display_name} and {p2.display_name} share common operational asset {asset.display_name} ({asset.type})."
+
+                        alert = Alert(
+                            case_id=case_id,
+                            entity_id=asset.id,
+                            title=title,
+                            category="SHARED_IDENTIFIER",
+                            severity=severity,
+                            status="NEW",
+                            explanation=explanation,
+                            evidence=[
+                                f"Asset: {asset.display_name} ({asset.type})",
+                                f"Person 1: {p1.display_name}",
+                                f"Person 2: {p2.display_name}",
+                                f"Concurrency: {'Concurrent Co-Travel' if is_concurrent else 'Sequential Sharing'}",
+                                f"Timestamp: {concurrent_time or 'Observed Intelligence Event'}"
+                            ],
+                            confidence=0.93,
+                            timestamp=datetime.utcnow(),
+                            meta_info={"asset_id": asset.id, "person1_id": p1.id, "person2_id": p2.id, "is_concurrent": is_concurrent, "timestamp": concurrent_time}
+                        )
+                        db.add(alert)
+                        created_alerts.append(alert)
+
+        # C. Single-Suspect Vehicle & Driver Threat Analysis
+        vehicles = [e for e in entities.values() if e.type == "VEHICLE"]
+        for v in vehicles:
+            v_meta = v.meta_info or {}
+            v_category = v_meta.get("vehicle_category", "PERSONAL_VEHICLE")
+            owner_name = v_meta.get("registered_owner")
+            driver_name = v_meta.get("primary_driver")
+
+            # Query all relationships connected to this vehicle
+            v_rels = db.query(Relationship).filter(
+                Relationship.case_id == case_id,
+                Relationship.target_id == v.id,
+                Relationship.relationship_type.in_(["DRIVES", "OWNS", "TRAVELED_IN", "OPERATES", "USES"])
+            ).all()
+
+            drivers = [r for r in v_rels if r.relationship_type in ("DRIVES", "OPERATES")]
+            passengers = [r for r in v_rels if r.relationship_type in ("TRAVELED_IN", "USES")]
+
+            for pass_rel in passengers:
+                p_ent = entities.get(pass_rel.source_id)
+                if not p_ent or p_ent.type != "PERSON":
+                    continue
+
+                ts_str = pass_rel.timestamp.strftime('%Y-%m-%d %H:%M') if pass_rel.timestamp else "Observed Movement"
+
+                # Check if driver is distinct from passenger
+                for drv_rel in drivers:
+                    d_ent = entities.get(drv_rel.source_id)
+                    if d_ent and d_ent.id != p_ent.id:
+                        drv_ts = drv_rel.timestamp.strftime('%Y-%m-%d %H:%M') if drv_rel.timestamp else ts_str
+                        
+                        if v_category == "COMMERCIAL_CAB":
+                            title = f"Commercial Cab Transit: {p_ent.display_name} ({v.display_name})"
+                            severity = "LOW"
+                            category = "COMMERCIAL_CAB_TRANSIT"
+                            explanation = f"{p_ent.display_name} traveled via commercial cab {v.display_name} operated by driver {d_ent.display_name} at {drv_ts}."
+                        else:
+                            title = f"Suspicious Escorted Transit: {p_ent.display_name} (Driver: {d_ent.display_name})"
+                            severity = "CRITICAL" if p_ent.risk_score > 60 or d_ent.risk_score > 60 else "HIGH"
+                            category = "SUSPICIOUS_DRIVER_ESCORT"
+                            explanation = f"{p_ent.display_name} was transported in syndicate asset {v.display_name} driven by operative {d_ent.display_name} at {drv_ts}."
+
+                        alert = Alert(
+                            case_id=case_id,
+                            entity_id=v.id,
+                            title=title,
+                            category=category,
+                            severity=severity,
+                            status="NEW",
+                            explanation=explanation,
+                            evidence=[
+                                f"Passenger: {p_ent.display_name} (Risk: {p_ent.risk_score:.0f})",
+                                f"Driver: {d_ent.display_name} (Risk: {d_ent.risk_score:.0f})",
+                                f"Vehicle: {v.display_name} ({v_category})",
+                                f"Event Timestamp: {drv_ts}"
+                            ],
+                            confidence=0.92,
+                            timestamp=drv_rel.timestamp or datetime.utcnow(),
+                            meta_info={"vehicle_id": v.id, "passenger_id": p_ent.id, "driver_id": d_ent.id, "vehicle_category": v_category, "timestamp": drv_ts}
+                        )
+                        db.add(alert)
+                        created_alerts.append(alert)
+
+                # Check for Self-Driven Transit by Registered Owner
+                if owner_name and p_ent.display_name.lower() == owner_name.lower():
+                    title = f"Owner Self-Driven Transit: {p_ent.display_name} ({v.display_name})"
+                    alert = Alert(
+                        case_id=case_id,
+                        entity_id=v.id,
+                        title=title,
+                        category="SELF_DRIVEN_TRANSIT",
+                        severity="MEDIUM",
+                        status="NEW",
+                        explanation=f"{p_ent.display_name} self-drove personal vehicle {v.display_name} across operational movement points at {ts_str}.",
+                        evidence=[
+                            f"Owner/Driver: {p_ent.display_name}",
+                            f"Vehicle: {v.display_name} ({v_category})",
+                            f"Event Timestamp: {ts_str}"
+                        ],
+                        confidence=0.95,
+                        timestamp=pass_rel.timestamp or datetime.utcnow(),
+                        meta_info={"vehicle_id": v.id, "owner_id": p_ent.id, "vehicle_category": v_category, "timestamp": ts_str}
+                    )
+                    db.add(alert)
+                    created_alerts.append(alert)
 
         # Process Location Alerts
         for la in loc_anomalies:

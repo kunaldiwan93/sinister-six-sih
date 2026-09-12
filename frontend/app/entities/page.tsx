@@ -46,8 +46,8 @@ export default function EntitiesPage() {
   }, [caseId, typeFilter, minRisk, search]);
 
   return (
-    <div className="relative flex h-full gap-4 font-mono select-none">
-      <div className="flex-1 space-y-4">
+    <div className="space-y-4 font-mono select-none">
+      <div className="space-y-4">
         {/* Header & Filter Controls */}
         <div className="p-4 rounded-lg bg-surface border border-border flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>

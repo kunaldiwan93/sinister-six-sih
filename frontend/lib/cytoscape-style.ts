@@ -152,11 +152,45 @@ export const cytoscapeStyles: any[] = [
     } as any,
   },
   {
-    selector: "edge[relationship = 'MET'], edge[relationship = 'SHARED_VEHICLE']",
+    selector: "edge[relationship = 'MET']",
     style: {
       "line-color": "#f59e0b",
       "target-arrow-color": "#f59e0b",
       "width": 2.2,
+    } as any,
+  },
+  {
+    selector: "edge[relationship = 'OWNS']",
+    style: {
+      "line-color": "#eab308",
+      "target-arrow-color": "#eab308",
+      "width": 2.2,
+    } as any,
+  },
+  {
+    selector: "edge[relationship = 'DRIVES'], edge[relationship = 'OPERATES']",
+    style: {
+      "line-color": "#3b82f6",
+      "target-arrow-color": "#3b82f6",
+      "width": 2,
+    } as any,
+  },
+  {
+    selector: "edge[relationship = 'TRAVELED_IN'], edge[relationship = 'USES']",
+    style: {
+      "line-color": "#06b6d4",
+      "target-arrow-color": "#06b6d4",
+      "line-style": "dotted",
+      "width": 2,
+    } as any,
+  },
+  {
+    selector: "edge[relationship = 'SHARED_VEHICLE']",
+    style: {
+      "line-color": "#ef4444",
+      "target-arrow-color": "#ef4444",
+      "line-style": "dashed",
+      "width": 2.5,
     } as any,
   },
 

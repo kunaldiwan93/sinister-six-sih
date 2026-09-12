@@ -39,8 +39,16 @@ export function AlertCard({ alert, onStatusChange }: AlertCardProps) {
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${severityStyle}`}>
               {alert.severity}
             </span>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
-              {alert.category}
+            <span className={`text-[10px] px-2 py-0.5 rounded border font-semibold ${
+              alert.category === "SUSPICIOUS_DRIVER_ESCORT"
+                ? "bg-purple-950/80 border-purple-700 text-purple-300"
+                : alert.category === "COMMERCIAL_CAB_TRANSIT"
+                ? "bg-sky-950/80 border-sky-700 text-sky-300"
+                : alert.category === "SELF_DRIVEN_TRANSIT"
+                ? "bg-amber-950/80 border-amber-700 text-amber-300"
+                : "bg-slate-900 border-slate-800 text-slate-400"
+            }`}>
+              {alert.category.replace(/_/g, " ")}
             </span>
             <span
               className={`text-[10px] px-1.5 py-0.5 rounded ${

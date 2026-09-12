@@ -85,8 +85,8 @@ class RiskScoringService:
             # 5. Association Score (0-100)
             # Connections to other high degree / flagged nodes
             e_rels = rel_by_entity.get(e.id, [])
-            shared_resources = [r for r in e_rels if "SHARED" in (r.relationship_type or "")]
-            assoc_score = min(len(e_rels) * 8.0 + len(shared_resources) * 25.0, 100.0)
+            shared_resources = [r for r in e_rels if "SHARED" in (r.relationship_type or "") or (r.relationship_type or "") in ("USES", "OPERATES")]
+            assoc_score = min(len(e_rels) * 8.0 + len(shared_resources) * 20.0, 100.0)
             if shared_resources:
                 types = list(set(r.relationship_type for r in shared_resources))
                 risk_factors.append(f"Shared identifiers/resources: {', '.join(types)}")

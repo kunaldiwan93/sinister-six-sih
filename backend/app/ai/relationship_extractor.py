@@ -78,12 +78,18 @@ class RelationshipExtractor:
                     for ph in phones:
                         add_rel(p["display_name"], ph["display_name"], "USES", 0.96, sentence)
 
-            # Pattern 3: Vehicle Ownership / Usage ("owns vehicle", "driving", "seen in vehicle", "vehicle ... observed")
-            if any(k in s_lower for k in ["owns", "driver", "driving", "travelled in", "vehicle", "car", "suv"]):
+            # Pattern 3: Vehicle Usage / Ownership & Co-Travel
+            if any(k in s_lower for k in ["owns", "driver", "driving", "travelled in", "vehicle", "car", "suv", "co-travelling", "shared vehicle"]):
                 for p in persons:
                     for v in vehicles:
                         rel = "OWNS" if "owns" in s_lower else "USES"
                         add_rel(p["display_name"], v["display_name"], rel, 0.93, sentence)
+
+                # Direct Person-to-Person co-travel edge when multiple persons are mentioned in vehicular context
+                if len(persons) >= 2 and any(k in s_lower for k in ["co-travelling", "together", "along with", "with", "shared vehicle", "travelling"]):
+                    for i in range(len(persons)):
+                        for j in range(i + 1, len(persons)):
+                            add_rel(persons[i]["display_name"], persons[j]["display_name"], "SHARED_VEHICLE", 0.94, sentence)
 
             # Pattern 4: Financial ("transferred", "paid", "received ₹", "sent money", "hawala", "wire")
             if any(k in s_lower for k in ["transfer", "paid", "sent", "received", "deposited", "withdrew", "account"]):
